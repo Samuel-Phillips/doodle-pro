@@ -1,17 +1,20 @@
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include <X11/keysym.h>
+#include <X11/cursorfont.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <ctype.h>
 #include <string.h>
+#include <limits.h>
 
 #define UPDATEXY(thing) (\
-    dx = (thing).x - x, \
-    dy = (thing).y - y, \
-    x = (thing).x, \
-    y = (thing).y )
+    state.dx = (thing).x - state.x, \
+    state.dy = (thing).y - state.y, \
+    state.x = (thing).x, \
+    state.y = (thing).y )
 #define MIN(a, b) ((a) < (b)? (a) : (b))
 #define MAX(a, b) ((a) > (b)? (a) : (b))
 
@@ -103,41 +106,93 @@ bool getselection(mystack *bsb, XPoint anchors[],
     }
 }
 
-int main(void) {
-    unsigned char *pixels = NULL;
-    Display *disp = XOpenDisplay(NULL);
-    if (!disp) error("Cannot open display");
-    int s = DefaultScreen(disp);
-    unsigned long BLACK = BlackPixel(disp, s);
-    unsigned long WHITE = WhitePixel(disp, s);
-    Window w = XCreateSimpleWindow(
-            disp, RootWindow(disp, s),
-            10, 10, 200, 200, 1,
-            BLACK, WHITE);
-    XGCValues values = { 0 };
-    GC gc = XCreateGC(disp, w, 0, &values);
-    XSetForeground(disp, gc, BLACK);
-    Atom wmDeleteMessage = XInternAtom(disp, "WM_DELETE_WINDOW", false);
-    XSetWMProtocols(disp, w, &wmDeleteMessage, 1);
-    XGrabPointer(disp, w, false, ButtonPressMask, GrabModeAsync,
-            GrabModeAsync, None, None, CurrentTime);
-    XSelectInput(disp, w, ExposureMask | KeyPressMask | ButtonPressMask
-            | Button1MotionMask | Button3MotionMask | PointerMotionMask);
-    XMapWindow(disp, w);
-    pixels = newpixgrid(disp, w);
-    mystack backspacebuf = mkstk(16);
-    spush(&backspacebuf, '1');
-    spush(&backspacebuf, '2');
-    spop(&backspacebuf);
-    spop(&backspacebuf);
-    unsigned x = 0, y = 0;
+typedef struct {
+    unsigned char *pixels;
+    Display *disp;
+    int s;
+    unsigned long BLACK;
+    unsigned long WHITE;
+    Window w;
+    XGCValues values;
+    GC gc;
+    Atom wmDeleteMessage;
+    mystack backspacebuf;
+    unsigned x, y;
     unsigned focusx, focusy;
-    int dx = 0, dy = 0;
-    XPoint anchors[10] = { { 0, 0 } };
-    bool isreadyforrcl = false;
+    int dx, dy;
+    XPoint anchors[10];
+    bool isreadyforrcl;
+} state;
+
+void lockwindowsize(Display *d, Window w) {
+    Window _0;
+    int _1, _2;
+    unsigned int width, height;
+    unsigned int _3, _4;
+    XGetGeometry(d, w, &_0, &_1, &_2, &width, &height, &_3, &_4);
+
+    XSizeHints xsh;
+    xsh.flags = USSize;
+    xsh.min_width = xsh.max_width = width;
+    xsh.min_height = xsh.max_height = height;
+    XSetNormalHints(d, w, &xsh);
+    XSetWMSizeHints(d, w, &xsh, PMinSize | PMaxSize);
+    printf("Booyeah!\n");
+}
+
+void unlockwindowsize(Display *d, Window w) {
+    XSizeHints xsh;
+    xsh.flags = USSize;
+    xsh.min_width = xsh.min_height = 0;
+    xsh.max_width = xsh.max_height = INT_MAX;
+    XSetNormalHints(d, w, &xsh);
+    XSetWMSizeHints(d, w, &xsh, PMinSize | PMaxSize);
+    printf("Booyeah?\n");
+}
+
+
+#define SDS state.disp
+#define SW state.w
+#define SGC state.gc
+
+int main(void) {
+    state state;
+    state.pixels = NULL;
+    state.disp = XOpenDisplay(NULL);
+    if (!state.disp) error("Cannot open display");
+    state.s = DefaultScreen(state.disp);
+    state.BLACK = BlackPixel(SDS, state.s);
+    state.WHITE = WhitePixel(SDS, state.s);
+    state.w = XCreateSimpleWindow(
+            state.disp, RootWindow(SDS, state.s),
+            10, 10, 200, 200, 1,
+            state.BLACK, state.WHITE);
+    state.values = (XGCValues){ 0 };
+    state.gc = XCreateGC(SDS, SW, 0, &state.values);
+    XSetForeground(state.disp, state.gc, state.BLACK);
+    state.wmDeleteMessage = XInternAtom(state.disp, "WM_DELETE_WINDOW", false);
+    XSetWMProtocols(SDS, SW, &state.wmDeleteMessage, 1);
+    XGrabPointer(SDS, SW, false, ButtonPressMask, GrabModeAsync,
+            GrabModeAsync, None, None, CurrentTime);
+    XSelectInput(SDS, SW, ExposureMask | KeyPressMask | ButtonPressMask
+            | Button1MotionMask | Button3MotionMask | PointerMotionMask);
+    XStoreName(SDS, SW, "Doodle Pro");
+    Cursor c = XCreateFontCursor(SDS, XC_tcross);
+    XDefineCursor(SDS, SW, c);
+    XMapWindow(SDS, SW);
+    state.pixels = newpixgrid(SDS, SW);
+    state.backspacebuf = mkstk(16);
+    spush(&state.backspacebuf, '1');
+    spush(&state.backspacebuf, '2');
+    spop(&state.backspacebuf);
+    spop(&state.backspacebuf);
+    state.x = 0, state.y = 0;
+    state.dx = 0, state.dy = 0;
+    memset(state.anchors, 0, sizeof state.anchors);
+    state.isreadyforrcl = false;
     while(true) {
         XEvent e;
-        XNextEvent(disp, &e);
+        XNextEvent(state.disp, &e);
         KeySym ks;
         switch (e.type) {
             case Expose:
@@ -147,13 +202,13 @@ int main(void) {
                 if (ks == XK_Escape) {
                     goto close;
                 } else if (ks == XK_BackSpace) {
-                    char c = spop(&backspacebuf);
+                    char c = spop(&state.backspacebuf);
                     if (c) {
-                        XSetForeground(disp, gc, WHITE);
+                        XSetForeground(state.disp, state.gc, state.WHITE);
                         char buf[2] = { c, '\0' };
-                        x -= 6;
-                        XDrawString(disp, w, gc, x, y, buf, 1);
-                        XSetForeground(disp, gc, BLACK);
+                        state.x -= 6;
+                        XDrawString(SDS, SW, SGC, state.x, state.y, buf, 1);
+                        XSetForeground(state.disp, state.gc, state.BLACK);
                     }
                 } else if (' ' <= ks && ks <= '~') {
                     if (e.xkey.state & ShiftMask) {
@@ -178,44 +233,52 @@ int main(void) {
                     if (e.xkey.state & ControlMask) {
                         XPoint b1, b2, sz;
                         if (isdigit(ks)) {
-                            anchors[ks - '0'] = (XPoint){ x, y };
+                            state.anchors[ks - '0'] =
+                                (XPoint){ state.x, state.y };
                         } else switch (ks) {
                             case 'w':
                                 goto close;
                             case 'z':
-                                XDrawString(disp, w, gc, x, y,
+                                XDrawString(SDS, SW, SGC, state.x, state.y,
                                         "LOL WHAT A NOOB", 15);
                                 break;
                             case 'r':
-                                isreadyforrcl = true;
+                                state.isreadyforrcl = true;
                                 break;
+                            case 'l':
+                                lockwindowsize(SDS, SW);
+                                break;
+                            case 'L':
+                                unlockwindowsize(SDS, SW);
                             case 'f':
-                                if (getselection(&backspacebuf, anchors,
+                                if (getselection(&state.backspacebuf,
+                                            state.anchors,
                                             &b1, NULL, &sz)) {
-                                    XFillRectangle(disp, w, gc, b1.x, b1.y,
+                                    XFillRectangle(SDS, SW, SGC, b1.x, b1.y,
                                             sz.x, sz.y);
                                 }
                                 break;
 
                             case 'c':
-                                if (getselection(&backspacebuf, anchors,
+                                if (getselection(&state.backspacebuf,
+                                            state.anchors,
                                             &b1, NULL, &sz)) {
-                                    XCopyArea(disp, w, w, gc,
+                                    XCopyArea(SDS, SW, state.w, state.gc,
                                         b1.x, b1.y,
                                         sz.x, sz.y,
-                                        x, y);
+                                        state.x, state.y);
                                 }
                                 break;
                         }
-                    } else if (isreadyforrcl && isdigit(ks)) {
-                        x = anchors[ks - '0'].x;
-                        y = anchors[ks - '0'].y;
-                        isreadyforrcl = false;
+                    } else if (state.isreadyforrcl && isdigit(ks)) {
+                        state.x = state.anchors[ks - '0'].x;
+                        state.y = state.anchors[ks - '0'].y;
+                        state.isreadyforrcl = false;
                     } else {
                         char buf[2] = { ks, '\0' };
-                        XDrawString(disp, w, gc, x, y, buf, 1);
-                        spush(&backspacebuf, ks);
-                        x += 6;
+                        XDrawString(SDS, SW, SGC, state.x, state.y, buf, 1);
+                        spush(&state.backspacebuf, ks);
+                        state.x += 6;
                     }
                 }
                 break;
@@ -223,37 +286,38 @@ int main(void) {
                 UPDATEXY(e.xbutton);
                 switch (e.xbutton.button) {
                     case Button1:
-                        XDrawPoint(disp,w,gc, x, y);
-                        setpixel(pixels, x, y);
+                        XDrawPoint(SDS, SW, SGC, state.x, state.y);
+                        setpixel(state.pixels, state.x, state.y);
                         break;
                     case Button3:
                         UPDATEXY(e.xbutton);
-                        focusx = x; focusy = y;
+                        state.focusx = state.x;
+                        state.focusy = state.y;
                         break;
                 }
             case ClientMessage:
-                if (e.xclient.data.l[0] == wmDeleteMessage) {
+                if (e.xclient.data.l[0] == state.wmDeleteMessage) {
                     goto close;
                 }
                 break;
             case MotionNotify:
                 UPDATEXY(e.xmotion);
                 if (e.xmotion.state & Button1Mask) {
-                    XDrawPoint(disp,w,gc, x, y);
-                    setpixel(pixels, x, y);
+                    XDrawPoint(SDS, SW, SGC, state.x, state.y);
+                    setpixel(state.pixels, state.x, state.y);
                 } else if (e.xmotion.state & Button3Mask) {
                     XPoint points[3] = {
-                        { focusx, focusy },
-                        { x, y },
-                        { x - dx, y - dy }
+                        { state.focusx, state.focusy },
+                        { state.x, state.y },
+                        { state.x - state.dx, state.y - state.dy }
                     };
-                    XFillPolygon(disp, w, gc, points, 3,
+                    XFillPolygon(SDS, SW, SGC, points, 3,
                         Convex, CoordModeOrigin);
                 }
                 break;
         }
     }
 close:
-    XCloseDisplay(disp);
+    XCloseDisplay(state.disp);
     return 0;
 }
