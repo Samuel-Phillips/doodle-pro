@@ -304,6 +304,12 @@ int main(int argc, char **argv) {
                         } else switch (ks) {
                             case 'w':
                                 goto close;
+                            case 'i':
+                                {   unsigned long tmp = state.BLACK;
+                                    state.BLACK = state.WHITE;
+                                    state.WHITE = tmp; }
+                                XSetForeground(state.disp, state.gc, state.BLACK);
+                                break;
                             case 'z':
                                 XDrawString(SDS, SI, SIGC, state.x, state.y,
                                         "LOL WHAT A NOOB", 15);
