@@ -122,6 +122,8 @@ typedef struct {
     int dx, dy;
     XPoint anchors[10];
     bool isreadyforrcl;
+
+    Pixmap image;
 } state;
 
 void lockwindowsize(Display *d, Window w) {
@@ -150,16 +152,28 @@ void unlockwindowsize(Display *d, Window w) {
     printf("Booyeah?\n");
 }
 
+void save(state *state) {
+    Window _0;
+    int _1, _2;
+    unsigned int width, height;
+    unsigned int _3, _4;
+    XGetGeometry(state->disp, state->image, &_0, &_1, &_2, &width, &height,
+            &_3, &_4);
+    XWriteBitmapFile(state->disp, "xdp-image.xpm", state->image, width, height,
+            0, 0);
+}
 
 #define SDS state.disp
 #define SW state.w
+#define SI state.image
 #define SGC state.gc
 
-int main(void) {
+int main(int argc, char **argv) {
     state state;
     state.pixels = NULL;
     state.disp = XOpenDisplay(NULL);
     if (!state.disp) error("Cannot open display");
+    XSynchronize(state.disp, True);
     state.s = DefaultScreen(state.disp);
     state.BLACK = BlackPixel(SDS, state.s);
     state.WHITE = WhitePixel(SDS, state.s);
@@ -190,12 +204,40 @@ int main(void) {
     state.dx = 0, state.dy = 0;
     memset(state.anchors, 0, sizeof state.anchors);
     state.isreadyforrcl = false;
+
+
+    state.image = XCreatePixmap(state.disp, state.w, 200, 200, 1);
+    XSetForeground(state.disp, state.gc, state.WHITE);
+    XFillRectangle(state.disp, SI, SGC, 0,0, 200, 200);
+
     while(true) {
         XEvent e;
         XNextEvent(state.disp, &e);
         KeySym ks;
         switch (e.type) {
             case Expose:
+                {
+                    Window _0;
+                    int _1, _2;
+                    unsigned int iwidth, iheight;
+                    unsigned int wwidth, wheight;
+                    unsigned int _3;
+                    unsigned int idepth, wdepth;
+                    XGetGeometry(SDS, SI, &_0, &_1, &_2, &iwidth, &iheight,
+                            &_3, &idepth);
+                    XGetGeometry(SDS, SW, &_0, &_1, &_2, &wwidth, &wheight,
+                            &_3, &wdepth);
+                    unsigned int width = MIN(iwidth, wwidth);
+                    unsigned int height = MIN(iheight, wheight);
+//                  Pixmap newmap = XCreatePixmap(SDS, SW, wwidth, wheight, wdepth);
+                    printf("line 229, \n");
+//                  XCopyArea(SDS, SI, SW, SGC, 0, 0, width, height, 0, 0);
+                    printf("line 231\n");
+//                  XCopyArea(SDS, SI, newmap, SGC, 0, 0, width, height, 0, 0);
+                    printf("line 233\n");
+//                  XFreePixmap(SDS, SI);
+//                  SI = newmap;
+                }
                 break;
             case KeyPress:
                 ks = XLookupKeysym(&e.xkey, 0);
@@ -207,7 +249,7 @@ int main(void) {
                         XSetForeground(state.disp, state.gc, state.WHITE);
                         char buf[2] = { c, '\0' };
                         state.x -= 6;
-                        XDrawString(SDS, SW, SGC, state.x, state.y, buf, 1);
+                        XDrawString(SDS, SI, SGC, state.x, state.y, buf, 1);
                         XSetForeground(state.disp, state.gc, state.BLACK);
                     }
                 } else if (' ' <= ks && ks <= '~') {
@@ -239,6 +281,8 @@ int main(void) {
                             case 'w':
                                 goto close;
                             case 'z':
+                                XDrawString(SDS, SI, SGC, state.x, state.y,
+                                        "LOL WHAT A NOOB", 15);
                                 XDrawString(SDS, SW, SGC, state.x, state.y,
                                         "LOL WHAT A NOOB", 15);
                                 break;
@@ -254,6 +298,8 @@ int main(void) {
                                 if (getselection(&state.backspacebuf,
                                             state.anchors,
                                             &b1, NULL, &sz)) {
+                                    XFillRectangle(SDS, SI, SGC, b1.x, b1.y,
+                                            sz.x, sz.y);
                                     XFillRectangle(SDS, SW, SGC, b1.x, b1.y,
                                             sz.x, sz.y);
                                 }
@@ -263,12 +309,18 @@ int main(void) {
                                 if (getselection(&state.backspacebuf,
                                             state.anchors,
                                             &b1, NULL, &sz)) {
+                                    XCopyArea(SDS, SI, state.w, state.gc,
+                                        b1.x, b1.y,
+                                        sz.x, sz.y,
+                                        state.x, state.y);
                                     XCopyArea(SDS, SW, state.w, state.gc,
                                         b1.x, b1.y,
                                         sz.x, sz.y,
                                         state.x, state.y);
                                 }
                                 break;
+                            case 's':
+                                save(&state);
                         }
                     } else if (state.isreadyforrcl && isdigit(ks)) {
                         state.x = state.anchors[ks - '0'].x;
@@ -276,6 +328,7 @@ int main(void) {
                         state.isreadyforrcl = false;
                     } else {
                         char buf[2] = { ks, '\0' };
+                        XDrawString(SDS, SI, SGC, state.x, state.y, buf, 1);
                         XDrawString(SDS, SW, SGC, state.x, state.y, buf, 1);
                         spush(&state.backspacebuf, ks);
                         state.x += 6;
@@ -286,7 +339,11 @@ int main(void) {
                 UPDATEXY(e.xbutton);
                 switch (e.xbutton.button) {
                     case Button1:
+                        printf("line 340\n");
+                        XDrawPoint(SDS, SI, SGC, state.x, state.y);
+                        printf("line 342\n");
                         XDrawPoint(SDS, SW, SGC, state.x, state.y);
+                        printf("line 344\n");
                         setpixel(state.pixels, state.x, state.y);
                         break;
                     case Button3:
@@ -303,6 +360,7 @@ int main(void) {
             case MotionNotify:
                 UPDATEXY(e.xmotion);
                 if (e.xmotion.state & Button1Mask) {
+                    XDrawPoint(SDS, SI, SGC, state.x, state.y);
                     XDrawPoint(SDS, SW, SGC, state.x, state.y);
                     setpixel(state.pixels, state.x, state.y);
                 } else if (e.xmotion.state & Button3Mask) {
@@ -311,6 +369,8 @@ int main(void) {
                         { state.x, state.y },
                         { state.x - state.dx, state.y - state.dy }
                     };
+                    XFillPolygon(SDS, SI, SGC, points, 3,
+                        Convex, CoordModeOrigin);
                     XFillPolygon(SDS, SW, SGC, points, 3,
                         Convex, CoordModeOrigin);
                 }
