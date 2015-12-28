@@ -60,6 +60,8 @@ void note(char *f, ...) {
     va_end(ap);
 }
 
+#define LDB (note("made line %d\n", __LINE__))
+
 size_t updiv(size_t a, size_t b) {
     return a/b + ((a%b)? 1 : 0);
 }
@@ -114,7 +116,7 @@ typedef struct {
     unsigned long WHITE;
     Window w;
     XGCValues values;
-    GC gc;
+    GC gc, igc;
     Atom wmDeleteMessage;
     mystack backspacebuf;
     unsigned x, y;
@@ -167,6 +169,7 @@ void save(state *state) {
 #define SW state.w
 #define SI state.image
 #define SGC state.gc
+#define SIGC state.igc
 
 int main(int argc, char **argv) {
     state state;
@@ -205,10 +208,14 @@ int main(int argc, char **argv) {
     memset(state.anchors, 0, sizeof state.anchors);
     state.isreadyforrcl = false;
 
+    LDB;
 
     state.image = XCreatePixmap(state.disp, state.w, 200, 200, 1);
-    XSetForeground(state.disp, state.gc, state.WHITE);
-    XFillRectangle(state.disp, SI, SGC, 0,0, 200, 200);
+    state.igc = XCreateGC(state.disp, SI, 0, &state.values);
+    XSetForeground(state.disp, state.igc, state.WHITE);
+    XFillRectangle(state.disp, SI, SIGC, 0, 0, 200, 200);
+
+    LDB;
 
     while(true) {
         XEvent e;
@@ -229,14 +236,31 @@ int main(int argc, char **argv) {
                             &_3, &wdepth);
                     unsigned int width = MIN(iwidth, wwidth);
                     unsigned int height = MIN(iheight, wheight);
-//                  Pixmap newmap = XCreatePixmap(SDS, SW, wwidth, wheight, wdepth);
-                    printf("line 229, \n");
-//                  XCopyArea(SDS, SI, SW, SGC, 0, 0, width, height, 0, 0);
-                    printf("line 231\n");
-//                  XCopyArea(SDS, SI, newmap, SGC, 0, 0, width, height, 0, 0);
-                    printf("line 233\n");
-//                  XFreePixmap(SDS, SI);
-//                  SI = newmap;
+                    LDB;
+                    if (width != iwidth || height != iheight) {
+                        Pixmap newmap = XCreatePixmap(SDS, SW, wwidth, wheight,
+                                wdepth);
+                                LDB;
+                        GC newgc = XCreateGC(SDS, newmap, 0, &state.values);
+                        LDB;
+
+                        XCopyPlane(SDS, SI, SW, SGC, 0, 0, width, height, 0,0, 1);
+                        LDB;
+                        XCopyPlane(SDS, SI, newmap, newgc, 0, 0, width, height,
+                                0, 0, 1);
+                        LDB;
+
+                        XFreePixmap(SDS, SI);
+                        XFreeGC(SDS, SIGC);
+                        SI = newmap;
+                        SIGC = newgc;
+                        LDB;
+                    } else {
+                        LDB;
+                        XCopyPlane(SDS, SI, SW, SGC, 0, 0, width, height, 0, 0,
+                                1);
+                        LDB;
+                    }
                 }
                 break;
             case KeyPress:
@@ -249,7 +273,7 @@ int main(int argc, char **argv) {
                         XSetForeground(state.disp, state.gc, state.WHITE);
                         char buf[2] = { c, '\0' };
                         state.x -= 6;
-                        XDrawString(SDS, SI, SGC, state.x, state.y, buf, 1);
+                        XDrawString(SDS, SI, SIGC, state.x, state.y, buf, 1);
                         XSetForeground(state.disp, state.gc, state.BLACK);
                     }
                 } else if (' ' <= ks && ks <= '~') {
@@ -281,7 +305,7 @@ int main(int argc, char **argv) {
                             case 'w':
                                 goto close;
                             case 'z':
-                                XDrawString(SDS, SI, SGC, state.x, state.y,
+                                XDrawString(SDS, SI, SIGC, state.x, state.y,
                                         "LOL WHAT A NOOB", 15);
                                 XDrawString(SDS, SW, SGC, state.x, state.y,
                                         "LOL WHAT A NOOB", 15);
@@ -298,7 +322,7 @@ int main(int argc, char **argv) {
                                 if (getselection(&state.backspacebuf,
                                             state.anchors,
                                             &b1, NULL, &sz)) {
-                                    XFillRectangle(SDS, SI, SGC, b1.x, b1.y,
+                                    XFillRectangle(SDS, SI, SIGC, b1.x, b1.y,
                                             sz.x, sz.y);
                                     XFillRectangle(SDS, SW, SGC, b1.x, b1.y,
                                             sz.x, sz.y);
@@ -309,7 +333,7 @@ int main(int argc, char **argv) {
                                 if (getselection(&state.backspacebuf,
                                             state.anchors,
                                             &b1, NULL, &sz)) {
-                                    XCopyArea(SDS, SI, state.w, state.gc,
+                                    XCopyArea(SDS, SI, state.w, state.igc,
                                         b1.x, b1.y,
                                         sz.x, sz.y,
                                         state.x, state.y);
@@ -328,7 +352,7 @@ int main(int argc, char **argv) {
                         state.isreadyforrcl = false;
                     } else {
                         char buf[2] = { ks, '\0' };
-                        XDrawString(SDS, SI, SGC, state.x, state.y, buf, 1);
+                        XDrawString(SDS, SI, SIGC, state.x, state.y, buf, 1);
                         XDrawString(SDS, SW, SGC, state.x, state.y, buf, 1);
                         spush(&state.backspacebuf, ks);
                         state.x += 6;
@@ -340,7 +364,7 @@ int main(int argc, char **argv) {
                 switch (e.xbutton.button) {
                     case Button1:
                         printf("line 340\n");
-                        XDrawPoint(SDS, SI, SGC, state.x, state.y);
+                        XDrawPoint(SDS, SI, SIGC, state.x, state.y);
                         printf("line 342\n");
                         XDrawPoint(SDS, SW, SGC, state.x, state.y);
                         printf("line 344\n");
@@ -360,7 +384,7 @@ int main(int argc, char **argv) {
             case MotionNotify:
                 UPDATEXY(e.xmotion);
                 if (e.xmotion.state & Button1Mask) {
-                    XDrawPoint(SDS, SI, SGC, state.x, state.y);
+                    XDrawPoint(SDS, SI, SIGC, state.x, state.y);
                     XDrawPoint(SDS, SW, SGC, state.x, state.y);
                     setpixel(state.pixels, state.x, state.y);
                 } else if (e.xmotion.state & Button3Mask) {
@@ -369,7 +393,7 @@ int main(int argc, char **argv) {
                         { state.x, state.y },
                         { state.x - state.dx, state.y - state.dy }
                     };
-                    XFillPolygon(SDS, SI, SGC, points, 3,
+                    XFillPolygon(SDS, SI, SIGC, points, 3,
                         Convex, CoordModeOrigin);
                     XFillPolygon(SDS, SW, SGC, points, 3,
                         Convex, CoordModeOrigin);
