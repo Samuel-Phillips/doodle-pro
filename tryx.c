@@ -126,7 +126,20 @@ typedef struct {
     bool isreadyforrcl;
 
     Pixmap image;
+
+    bool inverse;
 } state;
+
+void flip(state *state) {
+    state->inverse = !state->inverse;
+
+    unsigned long tmp = state->BLACK;
+    state->BLACK = state->WHITE;
+    state->WHITE = tmp;
+
+    XSetForeground(state->disp, state->igc, state->BLACK);
+    XSetForeground(state->disp, state->gc, state->BLACK);
+}
 
 void lockwindowsize(Display *d, Window w) {
     Window _0;
@@ -165,6 +178,34 @@ void save(state *state) {
             0, 0);
 }
 
+#define NOINVERSE(state) for (bool flag=true, inverse=( \
+            (state)->inverse? flip(state) : 0, \
+            (state)->inverse); \
+        flag; \
+        flag = false, inverse? flip(state) : 0)
+
+void reload_screen(state *state) {
+    bool inverse = state->inverse;
+    LDB;
+    if (inverse) flip(state);
+
+    Window _0;
+    int _1, _2;
+    unsigned int width, height;
+    unsigned int _3, _4;
+    LDB;
+    XGetGeometry(state->disp, state->image, &_0, &_1, &_2, &width, &height,
+            &_3, &_4);
+    LDB;
+
+    XCopyPlane(state->disp, state->image, state->w, state->gc, 0, 0, width,
+            height, 0, 0, 1);
+    LDB;
+
+    if (inverse) flip(state);
+    LDB;
+}
+
 #define SDS state.disp
 #define SW state.w
 #define SI state.image
@@ -193,7 +234,7 @@ int main(int argc, char **argv) {
             GrabModeAsync, None, None, CurrentTime);
     XSelectInput(SDS, SW, ExposureMask | KeyPressMask | ButtonPressMask
             | Button1MotionMask | Button3MotionMask | PointerMotionMask);
-    XStoreName(SDS, SW, "Doodle Pro");
+    XStoreName(SDS, SW, "XDoodle Pro");
     Cursor c = XCreateFontCursor(SDS, XC_tcross);
     XDefineCursor(SDS, SW, c);
     XMapWindow(SDS, SW);
@@ -237,15 +278,18 @@ int main(int argc, char **argv) {
                     unsigned int width = MIN(iwidth, wwidth);
                     unsigned int height = MIN(iheight, wheight);
                     LDB;
-                    if (width != iwidth || height != iheight) {
+                    if (width != iwidth || height != iheight ||
+                        width != wwidth || height != wheight) {
                         Pixmap newmap = XCreatePixmap(SDS, SW, wwidth, wheight,
                                 wdepth);
                                 LDB;
                         GC newgc = XCreateGC(SDS, newmap, 0, &state.values);
                         LDB;
-
-                        XCopyPlane(SDS, SI, SW, SGC, 0, 0, width, height, 0,0, 1);
+                        XSetForeground(state.disp, newgc, state.WHITE);
+                        XFillRectangle(state.disp, newmap, newgc, 0, 0, 200,
+                                200);
                         LDB;
+
                         XCopyPlane(SDS, SI, newmap, newgc, 0, 0, width, height,
                                 0, 0, 1);
                         LDB;
@@ -255,10 +299,11 @@ int main(int argc, char **argv) {
                         SI = newmap;
                         SIGC = newgc;
                         LDB;
+                        reload_screen(&state);
+                        LDB;
                     } else {
                         LDB;
-                        XCopyPlane(SDS, SI, SW, SGC, 0, 0, width, height, 0, 0,
-                                1);
+                        reload_screen(&state);
                         LDB;
                     }
                 }
@@ -270,10 +315,13 @@ int main(int argc, char **argv) {
                 } else if (ks == XK_BackSpace) {
                     char c = spop(&state.backspacebuf);
                     if (c) {
+                        XSetForeground(state.disp, state.igc, state.WHITE);
                         XSetForeground(state.disp, state.gc, state.WHITE);
                         char buf[2] = { c, '\0' };
                         state.x -= 6;
                         XDrawString(SDS, SI, SIGC, state.x, state.y, buf, 1);
+                        XDrawString(SDS, SW, SGC, state.x, state.y, buf, 1);
+                        XSetForeground(state.disp, state.igc, state.BLACK);
                         XSetForeground(state.disp, state.gc, state.BLACK);
                     }
                 } else if (' ' <= ks && ks <= '~') {
@@ -305,16 +353,16 @@ int main(int argc, char **argv) {
                             case 'w':
                                 goto close;
                             case 'i':
-                                {   unsigned long tmp = state.BLACK;
-                                    state.BLACK = state.WHITE;
-                                    state.WHITE = tmp; }
-                                XSetForeground(state.disp, state.gc, state.BLACK);
+                                flip(&state);
                                 break;
                             case 'z':
                                 XDrawString(SDS, SI, SIGC, state.x, state.y,
                                         "LOL WHAT A NOOB", 15);
                                 XDrawString(SDS, SW, SGC, state.x, state.y,
                                         "LOL WHAT A NOOB", 15);
+                                break;
+                            case 'S':
+                                reload_screen(&state);
                                 break;
                             case 'r':
                                 state.isreadyforrcl = true;
