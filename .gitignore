@@ -4,6 +4,7 @@ ddlpro
 .*
 *.o
 
+doodle-pro-*.tar.gz
 Makefile.in
 
 /autom4te.cache
