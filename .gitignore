@@ -2,6 +2,7 @@ a.out
 xdp-image.xpm
 .*
 ddlpro
+*.o
 
 Makefile.in
 
@@ -12,6 +13,8 @@ Makefile.in
 /compile
 /config.h.in
 /config.h
+/config.log
+/config.status
 /configure
 /configure.scan
 /depcomp

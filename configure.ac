@@ -1,0 +1,8 @@
+AC_INIT([Doodle Pro], 1.1)
+PKG_CHECK_MODULES(XLIB, x11)
+AM_INIT_AUTOMAKE([-Wall -Werror foreign])
+AC_PROG_CC
+AC_CONFIG_HEADERS([config.h])
+AC_CONFIG_FILES(Makefile)
+AC_OUTPUT
+
